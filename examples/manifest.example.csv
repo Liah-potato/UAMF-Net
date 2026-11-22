@@ -1,0 +1,4 @@
+sample_id,patient_id,split,label,pathology,ct,gastro
+example_train,example_patient_train,train,0,pathology/train/example.png,ct/train/example.png,gastro/train/example.png
+example_val,example_patient_val,val,1,pathology/val/example.png,,gastro/val/example.png
+example_test,example_patient_test,test,2,pathology/test/example.png,ct/test/example.png,
