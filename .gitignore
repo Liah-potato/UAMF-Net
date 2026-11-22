@@ -205,3 +205,22 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# UAMF-Net private inputs and generated artifacts
+/data/
+/datasets/
+/private/
+/manifests/
+/checkpoints/
+/weights_cache/
+/outputs/
+/configs/local_*.json
+*.pt
+*.pth
+*.safetensors
+*.dcm
+*.nii
+*.nii.gz
+*.svs
+*.ndpi
+*.mrxs

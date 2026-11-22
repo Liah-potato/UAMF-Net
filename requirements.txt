@@ -1,0 +1,5 @@
+# Install a matching torch/torchvision build for your CPU or CUDA environment.
+torch>=2.3,<3
+torchvision>=0.18,<1
+timm>=1.0,<2
+Pillow>=10,<13
