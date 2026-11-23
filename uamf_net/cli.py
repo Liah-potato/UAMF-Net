@@ -10,17 +10,27 @@ from .data import read_manifest
 def main():
     parser = argparse.ArgumentParser(description="UAMF-Net reference implementation")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("demo", "validate-manifest", "train", "evaluate", "tune"):
+    for name in ("demo", "validate-manifest", "train", "train-expert", "import-weights", "evaluate", "tune"):
         command = commands.add_parser(name)
         command.add_argument("--config", default="configs/reference.json")
         if name in ("validate-manifest", "train", "evaluate"):
             command.add_argument("--manifest", required=True)
             command.add_argument("--data-root", required=True)
-        if name in ("train", "evaluate"):
+        if name in ("train", "train-expert", "import-weights", "evaluate"):
             command.add_argument("--checkpoint-dir", required=True)
+        if name in ("train", "train-expert", "evaluate"):
             command.add_argument("--device", default="auto")
         if name == "train":
             command.add_argument("--modality", choices=(*MODALITIES, "all"), default="all")
+        elif name == "train-expert":
+            command.add_argument("--modality", choices=MODALITIES, required=True)
+            command.add_argument("--train-dir", required=True)
+            command.add_argument("--selection-dir", required=True, help="Separate directory used for checkpoint selection")
+            command.add_argument("--class-folders", nargs=3, required=True, metavar="FOLDER",
+                                 help="Class directory names in the configured class order")
+        elif name == "import-weights":
+            command.add_argument("--modality", choices=MODALITIES, required=True)
+            command.add_argument("--source", required=True, help="Original trained task state_dict (.pth)")
         elif name == "evaluate":
             command.add_argument("--split", choices=("val", "test"), required=True)
             command.add_argument("--output", required=True)
@@ -40,6 +50,15 @@ def main():
             result = run_demo(config)
             if args.output:
                 write_json(args.output, result)
+        elif args.command == "train-expert":
+            from .benchmark_training import train_independent_expert
+            result = train_independent_expert(config, args.modality, args.train_dir,
+                                              args.selection_dir, args.class_folders,
+                                              args.checkpoint_dir, args.device)
+        elif args.command == "import-weights":
+            from .models import import_expert_weights
+            path = import_expert_weights(config, args.modality, args.source, args.checkpoint_dir)
+            result = {"modality": args.modality, "checkpoint": str(path)}
         elif args.command == "tune":
             from .tuning import tune_policy
             selected, report = tune_policy(config, args.predictions)

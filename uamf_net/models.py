@@ -1,7 +1,9 @@
 """Image experts, deterministic inference views, and strict task checkpoint loading."""
 
+from collections.abc import Mapping
 from contextlib import nullcontext
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import torch
 import timm
@@ -50,6 +52,50 @@ def checkpoint_metadata(config, modality):
             "classes": config["classes"], "normalization": config["normalization"]}
 
 
+def load_expert_state(config, modality, state, path):
+    model = timm.create_model(config["models"][modality]["tag"], pretrained=False, num_classes=3)
+    try:
+        model.load_state_dict(state, strict=True)
+    except RuntimeError as exc:
+        raise ValueError(f"Weights in {path} do not match the configured {modality} model: {exc}") from exc
+    return model
+
+
+def import_expert_weights(config, modality, source, checkpoint_dir):
+    """Validate an original state_dict and save a checkpoint for the fusion runner."""
+    source = Path(source)
+    destination = Path(checkpoint_dir) / f"{modality}_best.pt"
+    if destination.exists():
+        raise FileExistsError(f"Checkpoint already exists: {destination}")
+    state = torch.load(source, map_location="cpu", weights_only=True)
+    if not isinstance(state, Mapping) or not state or any(
+        not isinstance(name, str) or not isinstance(value, torch.Tensor)
+        for name, value in state.items()
+    ):
+        raise ValueError(f"Expected a task model state_dict saved by the original scripts: {source}")
+    if all(name.startswith("model.") for name in state):
+        state = {name.removeprefix("model."): value for name, value in state.items()}
+    model = load_expert_state(config, modality, state, source)
+    return save_expert_checkpoint(
+        config, modality, model.state_dict(), checkpoint_dir,
+        {"format": "imported_state_dict", "source": source.name},
+    )
+
+
+def save_expert_checkpoint(config, modality, state, checkpoint_dir, provenance):
+    destination = Path(checkpoint_dir) / f"{modality}_best.pt"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=destination.parent) as staging_dir:
+        temporary = Path(staging_dir) / destination.name
+        torch.save({"state_dict": state,
+                    "metadata": checkpoint_metadata(config, modality),
+                    "provenance": provenance},
+                   temporary)
+        # Publish only a complete checkpoint without overwriting an existing run.
+        destination.hardlink_to(temporary)
+    return destination
+
+
 class ImageExperts:
     def __init__(self, config, checkpoint_dir, device="auto"):
         self.config = config
@@ -62,13 +108,12 @@ class ImageExperts:
             return self.loaded[modality]
         path = self.checkpoint_dir / f"{modality}_best.pt"
         if not path.is_file():
-            raise FileNotFoundError(f"Task checkpoint required: {path}. Run train with private data first.")
+            raise FileNotFoundError(f"Task checkpoint required: {path}. Use train or import-weights to supply it.")
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         expected = checkpoint_metadata(self.config, modality)
         if checkpoint.get("metadata") != expected:
             raise ValueError(f"Checkpoint architecture, class order, or preprocessing mismatch: {path}")
-        model = timm.create_model(self.config["models"][modality]["tag"], pretrained=False, num_classes=3)
-        model.load_state_dict(checkpoint["state_dict"], strict=True)
+        model = load_expert_state(self.config, modality, checkpoint["state_dict"], path)
         model.to(self.device).eval()
         self.loaded[modality] = model
         return model
