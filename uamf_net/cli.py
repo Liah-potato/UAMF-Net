@@ -34,6 +34,8 @@ def main():
         elif name == "evaluate":
             command.add_argument("--split", choices=("val", "test"), required=True)
             command.add_argument("--output", required=True)
+            command.add_argument("--batch-pathology-views", action="store_true",
+                                 help="Run all pathology views as one model batch per image")
         elif name == "demo":
             command.add_argument("--output")
         elif name == "validate-manifest":
@@ -76,6 +78,8 @@ def main():
                 modalities = MODALITIES if args.modality == "all" else (args.modality,)
                 result = {m: train_expert(config, rows, m, args.checkpoint_dir, args.device) for m in modalities}
             else:
+                if args.batch_pathology_views:
+                    config["batch_pathology_views"] = True
                 from .pipeline import evaluate
                 result = evaluate(config, rows, args.split, args.checkpoint_dir, args.output, args.device)
         print(json.dumps(result, indent=2, allow_nan=False))

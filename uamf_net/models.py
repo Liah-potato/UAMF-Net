@@ -130,11 +130,14 @@ class ImageExperts:
             raise ValueError(f"Unreadable {modality} image: {path}") from exc
         model = self.load(modality)
         views = self.config["pathology_views"] if modality == "pathology" else 1
+        batch_size = views if modality == "pathology" and self.config.get("batch_pathology_views", False) else 1
         probabilities = []
-        # Sequential forwards: no claim of simultaneous TTA or measured speedup.
         with torch.inference_mode(), amp_context(self.device, self.config["training"]["amp"]):
-            for view in range(views):
-                inputs = image_transform(self.config, modality, view=view)(image).unsqueeze(0).to(self.device)
-                probabilities.append(torch.softmax(model(inputs).float(), dim=1)[0])
-        average = torch.stack(probabilities).mean(0).cpu().tolist()
+            for start in range(0, views, batch_size):
+                inputs = torch.stack([
+                    image_transform(self.config, modality, view=view)(image)
+                    for view in range(start, min(start + batch_size, views))
+                ]).to(self.device)
+                probabilities.append(torch.softmax(model(inputs).float(), dim=1))
+        average = torch.cat(probabilities, dim=0).mean(0).cpu().tolist()
         return Prediction(tuple(average))

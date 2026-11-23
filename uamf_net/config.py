@@ -26,6 +26,9 @@ def load_config(path):
         raise ValueError("tie_priority must be ct or gastro")
     if config["pathology_views"] not in (1, 5):
         raise ValueError("pathology_views must be 1 or 5")
+    config.setdefault("batch_pathology_views", False)
+    if not isinstance(config["batch_pathology_views"], bool):
+        raise ValueError("batch_pathology_views must be true or false")
     for name, model in config["models"].items():
         if not isinstance(model["input_size"], int) or model["input_size"] < 1:
             raise ValueError(f"Invalid input size for {name}")
