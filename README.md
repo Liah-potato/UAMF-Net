@@ -48,15 +48,15 @@ flowchart TD
 | Component | Reference implementation |
 | --- | --- |
 | Pathology expert | `convnext_base.fb_in1k`, 224 × 224 inputs |
-| CT expert | `maxvit_tiny_tf_512.in1k`, 512 × 512 **2D** inputs |
+| CT expert | `maxvit_tiny_tf_224.in1k`, 224 × 224 **2D** inputs, as in the recovered CT training script |
 | Gastroscopy expert | `fastvit_ma36.apple_in1k`, 224 × 224 inputs |
 | Pathology TTA | Original crop, horizontal flip, vertical flip, 90° rotation, enlarged center crop |
 | Auxiliary inference | One center-cropped view per available expert |
 | Uncertainty | Entropy of the mean softmax vector, using natural logarithms |
 | Auxiliary selection | Highest maximum class probability; CT wins an exact tie by default |
 | Fusion | Explicit decision-level rules; no trainable fusion head |
-| Training | Separate classifier-head training by default; full fine-tuning is configurable |
-| Loss | Poly-1 cross-entropy, ε = 1.0; standard cross-entropy is configurable |
+| Expert training | Separate full-model training from the recovered single-modality recipes |
+| Expert loss | Cross-entropy with 0.1 label smoothing in the recovered recipes |
 
 The implementation uses sequential forwards for pathology TTA. Auxiliary models
 are loaded on first use. Neither parallel execution nor a measured memory or
@@ -124,12 +124,82 @@ slice selection, and gastroscopy frame selection are external to this package.
 The code consumes the resulting 2D RGB images. It does not implement a 3D CT
 encoder or whole-slide aggregation.
 
-## Train the experts
+## Use weights from independent modality training
+
+Train the three classifiers separately. The fusion runner reads one task
+checkpoint per modality. If you already have a `.pth` state dict from an
+independent training script, import it before running evaluation:
+
+```bash
+python -m uamf_net import-weights --config configs/reference.json \
+  --modality pathology --source /private/weights/best_convnext.pth \
+  --checkpoint-dir checkpoints/run_001
+
+python -m uamf_net import-weights --config configs/reference.json \
+  --modality gastro --source /private/weights/best_fastvit.pth \
+  --checkpoint-dir checkpoints/run_001
+```
+
+For CT, use `--modality ct` with a trained three-class checkpoint. The recovered
+CT MaxViT benchmark script reports metrics but does not save task weights.
+Use a retained task checkpoint if available, or train a CT classifier and
+save its state dict before importing it. ImageNet initialization weights do
+not substitute for a trained three-class checkpoint.
+
+The importer accepts the wrapped `model.` parameter names used by the original
+pathology and gastroscopy scripts and checks that all parameter names and shapes
+match the configured backbone. It saves a new checkpoint in the format expected
+by `evaluate`. Use the configuration that matches the actual training class
+order and input preprocessing. A raw state dict does not encode either of those
+settings, so the importer records them from the supplied configuration.
+
+The CT reference settings follow the recovered 224-pixel benchmark script.
+Checkpoints created with the earlier 512-pixel reference configuration still
+require that same configuration.
+
+## Train and save one expert
+
+`train-expert` adapts the recovered pathology (`病理!C5`), CT (`CT!B3`) and
+gastroscopy (`胃镜!B3`) recipes in `模型acc.xlsx`. Each command writes a
+fusion-ready checkpoint. Run it once per modality with the corresponding
+private image directories and the folder names in the order of the three
+class IDs used for fusion.
+
+| Expert | Epochs | Batch | Learning rate | AdamW weight decay | Selection score |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Pathology ConvNeXt-Base | 40 | 16 | 0.0001 | 0.05 | Accuracy |
+| CT MaxViT-Tiny 224 | 50 | 16 | 0.00005 | 0.05 | Macro-F1 |
+| Gastroscopy FastViT-MA36 | 50 | 32 × 2 accumulation | 0.001 | 0.02 | Macro-F1 |
+
+All three recipes use cosine learning-rate scheduling and train the full model.
+The path and gastroscopy recipes use seed 42. The CT recipe does not set a seed.
+
+```bash
+python -m uamf_net train-expert --modality ct \
+  --train-dir /private/ct/train --selection-dir /private/ct/val \
+  --class-folders 0 1 2 --checkpoint-dir checkpoints/run_001
+```
+
+The original benchmark scripts evaluated and selected models on their
+`test` folders. Supply a separate validation directory for new runs and
+reserve a held-out test set for the final evaluation. The adapted trainer
+uses a deterministic CT selection transform, steps on the final partial
+gastroscopy accumulation group, and saves the CT task model. It uses the
+configured class order and standard `timm` pretrained initialization.
+
+These independent-training recipes and the public three-modal fusion runner
+are distinct from the recorded V119 Pro run, which trained pathology and
+gastroscopy in one script before two-modal fusion.
+
+## Train the experts with the optional reference trainer
 
 All parameters are explicit in [configs/reference.json](configs/reference.json).
 The reference configuration uses Poly-1 loss, AdamW, classifier-head training,
 and validation-loss selection with a maximum of 20 epochs and patience of 5.
 These are configurable reference settings, not recovered experiment logs.
+The original public script's optional trainer used five epochs and cross-entropy
+with 0.1 label smoothing. The separate single-modality benchmark scripts have
+their own settings.
 
 ```bash
 python -m uamf_net train \
@@ -206,6 +276,7 @@ uamf_net/
   data.py                  Pairing, split validation, and deduplication
   models.py                Backbones, transforms, task checkpoint loading
   training.py              Independent expert training and validation
+  benchmark_training.py    Source-based expert recipes and checkpoint export
   fusion.py                Entropy gating and conditional arbitration
   pipeline.py              Image evaluation and complete trace export
   tuning.py                Validation-only threshold selection
