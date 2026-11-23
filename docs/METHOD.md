@@ -16,10 +16,10 @@ train a fusion head, or implement a custom 3D encoder.
 The five deterministic pathology views are an original center crop, horizontal
 flip, vertical flip, 90-degree rotation, and enlarged center crop. The default
 224-pixel crop uses a 256-pixel resize; the enlarged view uses 280 pixels.
-Training uses a random crop and random horizontal flip. All image transforms
-use the configured RGB normalization. CT uses the 512-pixel input specified for
-its selected backbone; gastroscopy uses 224 pixels. Both auxiliary experts use
-one center-cropped view.
+The expert training transforms are modality-specific. All image transforms
+use the configured RGB normalization. The reference CT expert uses the
+224-pixel MaxViT variant from the recovered CT training script. Gastroscopy uses
+224 pixels. Both auxiliary experts use one center-cropped view.
 
 For pathology view probabilities $p^{(v)}$, average probabilities before
 calculating entropy:
@@ -87,7 +87,9 @@ return baseline
 
 ## Training objective and selection
 
-Each expert is trained independently. For logits $z$ and hard reference class
+The `train-expert` command uses the recovered modality-specific recipes with
+cross-entropy and 0.1 label smoothing. The separate `train` command offers
+a configurable reference trainer. For logits $z$ and hard reference class
 $y$, the default per-image objective is:
 
 $$\mathcal L=-\ln p_y+\epsilon_{poly}(1-p_y),\qquad \epsilon_{poly}=1.0.$$
