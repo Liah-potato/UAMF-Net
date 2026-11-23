@@ -2,7 +2,7 @@
   "classes": ["tubular_carcinoma", "poorly_cohesive_carcinoma", "benign"],
   "models": {
     "pathology": {"tag": "convnext_base.fb_in1k", "input_size": 224, "resize_size": 256},
-    "ct": {"tag": "maxvit_tiny_tf_512.in1k", "input_size": 512, "resize_size": 544},
+    "ct": {"tag": "maxvit_tiny_tf_224.in1k", "input_size": 224, "resize_size": 224},
     "gastro": {"tag": "fastvit_ma36.apple_in1k", "input_size": 224, "resize_size": 256}
   },
   "normalization": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
