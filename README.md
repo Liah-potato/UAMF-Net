@@ -58,9 +58,13 @@ flowchart TD
 | Expert training | Separate full-model training from the recovered single-modality recipes |
 | Expert loss | Cross-entropy with 0.1 label smoothing in the recovered recipes |
 
-The implementation uses sequential forwards for pathology TTA. Auxiliary models
-are loaded on first use. Neither parallel execution nor a measured memory or
-latency improvement is asserted here.
+Pathology TTA uses one forward per view by default. For new runs, pass
+`--batch-pathology-views` to `evaluate` or set
+`"batch_pathology_views": true` in the configuration. This groups all views of
+each pathology image into one model forward, then averages the per-view softmax
+probabilities. The output configuration records the chosen mode. Use the same
+mode when collecting validation predictions and evaluating the selected policy.
+Auxiliary models are loaded on first use.
 
 The class order is `0: tubular carcinoma`, `1: poorly cohesive carcinoma`,
 `2: benign`. The exact class definitions must match the private annotations.
