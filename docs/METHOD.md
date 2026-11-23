@@ -21,8 +21,9 @@ use the configured RGB normalization. The reference CT expert uses the
 224-pixel MaxViT variant from the recovered CT training script. Gastroscopy uses
 224 pixels. Both auxiliary experts use one center-cropped view.
 
-For pathology view probabilities $p^{(v)}$, average probabilities before
-calculating entropy:
+Pathology views can run in separate forwards or as one batch per image
+(`evaluate --batch-pathology-views`). In either mode, apply softmax per view
+and average the probabilities before calculating entropy:
 
 $$\bar p = \frac{1}{V}\sum_{v=1}^{V}p^{(v)},\qquad
 H(\bar p)=-\sum_{c=0}^{2}\bar p_c\ln\bar p_c.$$
